@@ -1,0 +1,30 @@
+{
+  "name": "prostarm-stock-portal",
+  "version": "1.0.0",
+  "description": "Branch inward/outward stock management portal for Prostarm Info Systems Ltd. Static HTML, CSS and JavaScript with no runtime dependencies.",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "serve": "node server.js",
+    "build": "echo 'No build required'",
+    "check": "node --check js/api.js && node --check js/auth.js && node --check js/ui.js && node --check js/stock-core.js && node --check js/dashboard.js && node --check js/summary.js && node --check js/reports.js && node --check js/admin.js"
+  },
+  "keywords": [
+    "inventory",
+    "stock",
+    "prostarm",
+    "sharepoint",
+    "power-automate"
+  ],
+  "author": "Prostarm Info Systems Ltd.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^5.2.1",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "//": "There are no dependencies by design. The portal is plain HTML, CSS and JavaScript, so it runs from a double-clicked index.html with no build step and no internet connection. npm start only serves the folder over HTTP."
+}

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in &middot; Prostarm Stock Portal</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="stylesheet" href="css/style.css?v=2026.09.15a">
+</head>
+<body>
+<div class="login-wrap">
+  <section class="login-art">
+    <div>
+      <span class="brand-plate" style="padding:10px 14px">
+        <img class="brand-logo lg" src="assets/prostarm-logo.png" alt="Prostarm Info Systems Ltd. — Power Redefined">
+      </span>
+      <h1>Branch inventory,<br>counted once.</h1>
+      <p>Inward and outward entries from every branch, one running balance per product, and a dashboard that HO and regional managers see the moment an entry is saved.</p>
+    </div>
+    <div class="login-stats">
+      <div><b id="sBranch">&mdash;</b><span>Branches</span></div>
+      <div><b id="sProd">&mdash;</b><span>Products</span></div>
+      <div><b id="sZone">&mdash;</b><span>Zones</span></div>
+    </div>
+  </section>
+
+  <section class="login-panel">
+    <div class="login-card">
+      <div class="logo" style="display:block">
+        <img class="brand-logo md" src="assets/prostarm-logo.png" alt="Prostarm Info Systems Ltd." style="margin-bottom:18px">
+        <b style="font-size:16px;display:block">Stock Portal</b>
+        <div class="muted small">Sign in with your Prostarm username or employee code</div>
+      </div>
+
+      <form id="loginForm" novalidate>
+        <div class="field">
+          <label for="u">Username</label>
+          <input class="input" id="u" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="e.g. prostarm">
+        </div>
+        <div class="field">
+          <label for="p">Password</label>
+          <input class="input" id="p" type="password" autocomplete="current-password" placeholder="Your password">
+        </div>
+        <div class="hint error hidden" id="err" role="alert"></div>
+        <button class="btn btn-primary btn-block" id="go" type="submit">Sign in</button>
+      </form>
+
+
+
+      <p class="muted small" style="margin-top:22px" id="modeLine"></p>
+    </div>
+  </section>
+</div>
+
+<div id="toasts"></div>
+<div id="loader"><div class="spinner"></div></div>
+
+<script src="js/config.js?v=2026.09.15a"></script>
+<script src="data/users.js?v=2026.09.15a"></script>
+<script src="data/branches.js?v=2026.09.15a"></script>
+<script src="data/products.js?v=2026.09.15a"></script>
+<script src="js/auth.js?v=2026.09.15a"></script>
+<script src="js/api.js?v=2026.09.15a"></script>
+<script src="js/ui.js?v=2026.09.15a"></script>
+<script>
+(function () {
+  var sess = window.Auth.current(); if (sess) { location.replace(window.RBAC.homePage(sess)); return; }
+
+  document.getElementById("sBranch").textContent = (window.SEED_BRANCHES || []).length;
+  document.getElementById("sProd").textContent = (window.SEED_PRODUCTS || []).length;
+  var z = {}; (window.SEED_BRANCHES || []).forEach(function (b) { z[b.zone] = 1; });
+  document.getElementById("sZone").textContent = Object.keys(z).length;
+  var loaded = (window.SEED_USERS || []).length;
+  var modeLine = document.getElementById("modeLine");
+  if (modeLine) {
+    modeLine.innerHTML =
+      window.UI.esc(window.APP_CONFIG.appName) + " v" + window.UI.esc(window.APP_CONFIG.version) +
+      " \u00b7 build " + window.UI.esc(window.APP_CONFIG.build || "\u2014") +
+      " \u00b7 backend " + window.UI.esc(window.APP_CONFIG.backend) +
+      " \u00b7 <span id=\"acctCount\">" + loaded + " accounts</span>";
+  }
+
+  /* The seed file is one thing; what this browser has stored is another.
+     Show the stored figure, because that is what sign-in reads. */
+  window.API.getUsers().then(function (rows) {
+    var el = document.getElementById("acctCount");
+    if (!el) return;
+    el.textContent = rows.length + " accounts";
+    if (rows.length !== loaded) {
+      el.innerHTML = rows.length + " accounts <span class=\"badge warn\">file has " + loaded + "</span>";
+    }
+  }).catch(function () {});
+
+  var err = document.getElementById("err");
+  document.getElementById("loginForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    err.classList.add("hidden");
+    var btn = document.getElementById("go");
+    btn.disabled = true; window.UI.loader(true);
+    window.Auth.signIn(document.getElementById("u").value, document.getElementById("p").value)
+      .then(function (session) {
+        var next = new URLSearchParams(location.search).get("next");
+        var home = window.RBAC.homePage(session);
+        var target = (next && next !== "login.html" && next !== "index.html") ? next : home;
+        location.href = target;
+      })
+      .catch(function (ex) {
+        err.textContent = ex.message;
+        err.classList.remove("hidden");
+        document.getElementById("p").select();
+      })
+      .then(function () { btn.disabled = false; window.UI.loader(false); });
+  });
+})();
+</script>
+</body>
+</html>

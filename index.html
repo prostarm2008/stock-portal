@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prostarm Stock Portal</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="stylesheet" href="css/style.css?v=2026.09.15a">
+</head>
+<body>
+  <div id="loader"><div class="spinner"></div></div>
+  <script src="js/config.js?v=2026.09.15a"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    (function () {
+      var sess = null;
+      try { sess = JSON.parse(sessionStorage.getItem("prostarm.stock.v1.session")); } catch (e) {}
+      if (sess) {
+        location.replace(window.RBAC.homePage(sess));
+      } else {
+        location.replace("login.html");
+      }
+    })();
+  </script>
+</body>
+</html>
