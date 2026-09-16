@@ -521,7 +521,18 @@
               if (!res.ok) return res.text().then(function (t) { var e = new Error(self._describeFailure(flowName, res.status, t)); e.status = res.status; e.flow = flowName; throw e; });
               throw new Error("Invalid JSON response from server");
             }
-            if (!res.ok) throw new Error((json && json.error) ? (typeof json.error === "object" ? (json.error.message || JSON.stringify(json.error)) : json.error) : ((json && json.message) ? json.message : ("Flow " + flowName + " returned " + res.status + ".")));
+            if (!res.ok) {
+              /* Route through _describeFailure so a gateway timeout is
+                 named as one, and keep the status and key on the error
+                 so the caller can decide whether it is safe to retry. */
+              var e2 = new Error(self._describeFailure(flowName, res.status, text));
+              e2.status = res.status;
+              e2.flow = flowName;
+              e2.batchId = (body && body.header && body.header.batchId) || opts.label || "";
+              e2.uncertain = /upstream server|did not receive a response|timed out|timeout/i
+                .test(text || "") || res.status === 504;
+              throw e2;
+            }
             return json;
           });
         }).then(function (json) {
@@ -547,7 +558,11 @@
         if (!detail) detail = JSON.stringify(j).slice(0, 300);
       } catch (e) { detail = String(text || "").slice(0, 300); }
       var hint = "";
-      if (status === 502 || status === 500) {
+      var upstream = /upstream server|did not receive a response|timed out|timeout/i.test(detail || "");
+      if (upstream || status === 504) {
+        hint = " This is a gateway timeout: the flow took too long to answer. " +
+               "It may still have written the rows \u2014 do not simply send the file again.";
+      } else if (status === 502 || status === 500) {
         hint = " The flow ran and failed. Open createTxn in Power Automate \u2014 the failed " +
                "action in its run history names the real cause.";
       } else if (status === 429) {
@@ -560,7 +575,8 @@
       return "Flow " + flowName + " returned " + status + "." + (detail ? " " + detail : "") + hint;
     },
 
-    _post: function (flowName, body) {
+    _post: function (flowName, body, opts) {
+      opts = opts || {};
       var self = this;
       var url = CFG.flows[flowName];
       if (!url) {
@@ -593,7 +609,18 @@
               if (!res.ok) return res.text().then(function (t) { var e = new Error(self._describeFailure(flowName, res.status, t)); e.status = res.status; e.flow = flowName; throw e; });
               throw new Error("Invalid JSON response from server");
             }
-            if (!res.ok) throw new Error((json && json.error) ? (typeof json.error === "object" ? (json.error.message || JSON.stringify(json.error)) : json.error) : ((json && json.message) ? json.message : ("Flow " + flowName + " returned " + res.status + ".")));
+            if (!res.ok) {
+              /* Route through _describeFailure so a gateway timeout is
+                 named as one, and keep the status and key on the error
+                 so the caller can decide whether it is safe to retry. */
+              var e2 = new Error(self._describeFailure(flowName, res.status, text));
+              e2.status = res.status;
+              e2.flow = flowName;
+              e2.batchId = (body && body.header && body.header.batchId) || opts.label || "";
+              e2.uncertain = /upstream server|did not receive a response|timed out|timeout/i
+                .test(text || "") || res.status === 504;
+              throw e2;
+            }
             return json;
           });
         }).then(function (json) {
@@ -640,6 +667,18 @@
           }
         });
         
+        /* Hiding "duplicate-looking" batches at read time was a workaround
+           for double-posting caused by blind retries. It is off by default
+           now, because two genuine documents can legitimately share a
+           branch, date, challan and product list \u2014 two identical transfers
+           on one day, for instance \u2014 and suppressing one makes the stock
+           summary, the dashboard and every report under-report real stock.
+
+           Duplicates are now prevented at the source instead: each document
+           carries a BatchId, and the flow should refuse one it has already
+           written. Set hideDuplicateBatches:true in js/config.js only as a
+           temporary measure while historic duplicates are cleaned up. */
+        if (!CFG.hideDuplicateBatches) return arr;
         return arr.filter(function(t) {
           return !t.batchId || validBatchIds[t.batchId];
         });
@@ -651,9 +690,35 @@
     /* The flow re-validates every line server-side and writes them in one
        transaction. The client checks are for fast feedback only — never
        trust them as the gate. */
+    /* After a timeout we cannot tell from the reply whether the rows were
+       written. Re-read the transactions and look for the keys we sent.
+       Resolves to { found: [...], missing: [...], usable: bool }.
+       usable is false when the flow does not store BatchId, in which case
+       the portal says so rather than guessing. */
+    verifyBatches: function (ids) {
+      return this.txns().then(function (rows) {
+        var list = (rows && rows.value) ? rows.value : rows;
+        if (!Array.isArray(list)) return { found: [], missing: ids.slice(), usable: false };
+        var anyKey = list.some(function (t) { return t && t.batchId; });
+        var seen = {};
+        list.forEach(function (t) { if (t && t.batchId) seen[t.batchId] = true; });
+        return {
+          usable: anyKey || list.length === 0,
+          found: ids.filter(function (i) { return seen[i]; }),
+          missing: ids.filter(function (i) { return !seen[i]; })
+        };
+      }).catch(function () { return { found: [], missing: ids.slice(), usable: false }; });
+    },
+
     createBatch: function (header, lines, actor) {
+      /* An idempotency key, generated here so it survives a retry. If the
+         gateway times out we cannot tell whether the flow wrote the rows;
+         with this key the flow can refuse a duplicate, and the portal can
+         look afterwards to see which documents actually landed. */
+      var batchId = header.batchId || uid("DOC");
       return this._post("createTxn", {
         header: {
+          batchId: batchId,
           date: header.date != null ? header.date : "",
           challanNo: header.challanNo != null ? header.challanNo : "",
           invoiceNo: header.invoiceNo != null ? header.invoiceNo : "",
@@ -677,6 +742,20 @@
           username: actor.username != null ? actor.username : "", 
           role: actor.role != null ? actor.role : "" 
         }
+      }, { noRetry: true, label: batchId }).then(function (res) {
+        var r = res || {};
+        var qty = lines.reduce(function (a, l) { return a + (Number(l.qty) || 0); }, 0);
+        return {
+          batchId: r.batchId || batchId,
+          lineCount: r.lineCount != null ? r.lineCount : lines.length,
+          totalQty: r.totalQty != null ? r.totalQty : qty,
+          lines: r.lines || [],
+          raw: res
+        };
+      }).catch(function (e) {
+        /* Attach the key so the caller can check whether it landed. */
+        e.batchId = batchId;
+        throw e;
       });
     },
     createTxn: function (txn, actor) {
@@ -725,6 +804,7 @@
     saveProduct: function (p) { return impl.saveProduct(p); },
     createTxn:   function (t, actor) { return impl.createTxn(t, actor); },
     createBatch: function (header, lines, actor) { return impl.createBatch(header, lines, actor); },
+    verifyBatches: function (ids) { return impl.verifyBatches ? impl.verifyBatches(ids) : Promise.resolve({found:[],missing:ids,usable:false}); },
     log:         function (a, d, actor) { return impl.log(a, d, actor); },
     reset:       function () { return impl.reset(); },
     seedSyncLog: function () { return impl.seedSyncLog ? impl.seedSyncLog() : []; },

@@ -593,6 +593,8 @@
             UI.loader(true);
 
             var gap = w.APP_CONFIG.bulkPostGapMs == null ? 400 : w.APP_CONFIG.bulkPostGapMs;
+            var confirmed = [], uncertain = [], definite = [];
+            state.lastRun = { confirmed: confirmed, uncertain: uncertain, definite: definite };
             keys.reduce(function (chain, k, __idx) {
               return chain.then(function () {
                 /* A pause between documents. Power Automate throttles a
@@ -616,8 +618,16 @@
                 }), user).then(function (res) {
                   postedKeys[baseKey] = true;
                   lines += g.length;
+                  confirmed.push({ label: first.branch + " \u00b7 " + (first.challanNo || "no challan"),
+                                   batchId: res.batchId, rows: g });
                 }).catch(function (e) {
-                  failed.push((first.challanNo || first.branch) + ": " + JSON.stringify(e));
+                  var rec = { label: first.branch + " \u00b7 " + (first.challanNo || "no challan"),
+                              batchId: e.batchId || "", rows: g, message: e.message };
+                  /* A gateway timeout is not a failure \u2014 it is an unknown.
+                     The flow may have written the rows and simply not
+                     answered in time. Treat it separately, then look. */
+                  if (e.uncertain) uncertain.push(rec); else definite.push(rec);
+                  failed.push(rec.label + ": " + e.message);
                 });
               });
             }, Promise.resolve()).then(function () {
@@ -627,13 +637,80 @@
                 lines + " line" + (lines === 1 ? "" : "s") + " inwarded" +
                 (failed.length ? ". " + failed.length + " document(s) failed \u2014 see below." : "."),
                 failed.length ? "warn" : "ok");
-              if (failed.length) {
-                var res = root.querySelector("#bulkResult"); if (res) res.innerHTML =
-                  '<div class="alert bad"><div><b>Some documents did not post</b>' +
-                  failed.slice(0, 5).map(UI.esc).join("<br>") +
-                  (failed.length > 5 ? "<br>and " + (failed.length - 5) + " more" : "") + "</div></div>";
+              if (!failed.length) { m.close(); if (opts.onDone) opts.onDone(); return; }
+
+              var res = root.querySelector("#bulkResult");
+              function render(verdict) {
+                var reallyMissing = definite.slice();
+                var stillUnknown = [];
+                if (verdict && verdict.usable) {
+                  uncertain.forEach(function (u) {
+                    if (verdict.missing.indexOf(u.batchId) >= 0) reallyMissing.push(u);
+                  });
+                } else {
+                  stillUnknown = uncertain;
+                }
+                var landed = Object.keys(postedKeys).length +
+                  (verdict && verdict.usable ? verdict.found.length : 0);
+
+                res.innerHTML =
+                  '<div class="alert ' + (reallyMissing.length ? "bad" : "warn") + '"><div>' +
+                  "<b>" + landed + " document(s) posted, " + reallyMissing.length +
+                  " did not" + (stillUnknown.length ? ", " + stillUnknown.length + " unconfirmed" : "") +
+                  "</b>Nothing has been posted twice.</div></div>" +
+
+                  (uncertain.length
+                    ? '<div class="alert warn"><div><b>Why the timeouts happened</b>' +
+                      '"The server did not receive a response from an upstream server" means the flow ' +
+                      "took too long to answer, not that it refused. " +
+                      (verdict && verdict.usable
+                        ? "The portal has checked which of these actually wrote rows, using the document key it sent."
+                        : "The portal could not check, because the Transactions list does not store the " +
+                          "<b>BatchId</b> the portal sends. Add that column and this becomes automatic.") +
+                      "</div></div>"
+                    : "") +
+
+                  (reallyMissing.length
+                    ? '<div class="scroll-y" style="max-height:170px"><table class="tbl"><thead><tr>' +
+                      "<th>Document</th><th>Reason</th></tr></thead><tbody>" +
+                      reallyMissing.map(function (f) {
+                        return "<tr><td>" + UI.esc(f.label) + '</td><td class="small" ' +
+                          'style="color:var(--bad-600)">' + UI.esc(f.message) + "</td></tr>";
+                      }).join("") + "</tbody></table></div>" +
+                      '<div class="btn-row" style="margin-top:12px">' +
+                      '<button class="btn btn-primary" id="bulkRetry">Retry the ' +
+                      reallyMissing.length + " document(s) that did not post</button></div>"
+                    : "") +
+
+                  (stillUnknown.length
+                    ? '<div class="scroll-y" style="max-height:150px;margin-top:10px">' +
+                      '<table class="tbl"><thead><tr><th>Unconfirmed document</th><th>Key sent</th>' +
+                      "</tr></thead><tbody>" +
+                      stillUnknown.map(function (f) {
+                        return "<tr><td>" + UI.esc(f.label) + '</td><td class="mono small">' +
+                          UI.esc(f.batchId || "\u2014") + "</td></tr>";
+                      }).join("") + "</tbody></table></div>" +
+                      '<div class="hint" style="margin-top:8px">Check these in Stock summary before ' +
+                      "sending them again \u2014 re-uploading a document that did post would double the " +
+                      "stock.</div>"
+                    : "");
+
+                var retry = res.querySelector("#bulkRetry");
+                if (retry) retry.onclick = function () {
+                  state.rows = reallyMissing.reduce(function (a, f) { return a.concat(f.rows); }, []);
+                  post(reallyMissing.length,
+                       state.rows.reduce(function (a, r) { return a + r.qty; }, 0));
+                };
+              }
+
+              if (uncertain.length) {
+                res.innerHTML = '<div class="alert info"><div><b>Checking what actually posted\u2026</b>' +
+                  uncertain.length + " document(s) timed out. Reading the transactions back before " +
+                  "reporting, so nothing is sent twice.</div></div>";
+                w.API.verifyBatches(uncertain.map(function (u) { return u.batchId; }))
+                  .then(render).catch(function () { render(null); });
               } else {
-                m.close();
+                render(null);
               }
               if (opts.onDone) opts.onDone();
             });
