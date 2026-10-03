@@ -63,9 +63,9 @@
               '<div id="fBranchMount"></div><div class="hint" id="branchHint"></div></div>' +
           "</div>" +
           '<div class="grid g-2" style="gap:0 14px">' +
-            '<div class="field"><label for="fChallan">Challan number</label>' +
+            '<div class="field"><label for="fChallan">UID/Challan No.</label>' +
               '<input class="input" id="fChallan" maxlength="40" placeholder="e.g. CH/2026/0184"></div>' +
-            '<div class="field"><label for="fInvoice">Invoice number</label>' +
+            '<div class="field"><label for="fInvoice">Bill No/Invoice number</label>' +
               '<input class="input" id="fInvoice" maxlength="40" placeholder="e.g. INV-77213"></div>' +
           "</div>" +
           '<div class="grid g-2" style="gap:0 14px">' +
