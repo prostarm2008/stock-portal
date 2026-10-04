@@ -8,7 +8,7 @@ window.APP_CONFIG = {
   /* Bumped whenever data/*.js or js/*.js is replaced. Appended to every
      script and stylesheet URL so a browser cannot serve a cached copy of
      an older user or product list. */
-  build: "2026.09.15a",
+  build: "2026.10.03a",
 
   /* ----------------------------------------------------------
      BACKEND MODE
@@ -44,8 +44,9 @@ window.APP_CONFIG = {
      first count as a Stock Transfer, which it is not. Remove it if you
      would rather they used one of the six. */
   movementCategories: {
-    IN:  ["Demo In", "Sales Return In", "Stock Transfer In", "Opening Stock In"],
-    OUT: ["Demo Out", "Sales Out", "Stock Transfer Out"]
+    IN:  ["Purchase In", "Demo In", "Sales Return In", "Stock Transfer In", "Opening Stock In"],
+    OUT: ["Demo Out", "Sales Out", "Stock Transfer Out",
+          "Stock Out for Warranty Support", "Stock Out for Consumption"]
   },
 
   /* Gap between documents when posting a bulk upload, in milliseconds.

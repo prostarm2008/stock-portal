@@ -37,7 +37,7 @@
           : "One challan or invoice, as many product lines as it carries. A line that would take a balance below zero stops the whole document.") +
         "</p></div>" +
         '<div class="btn-row no-print">' +
-        (isIn ? '<button class="btn btn-ghost btn-sm" id="bulkBtn">Bulk upload</button>' : "") +
+        '<button class="btn btn-ghost btn-sm" id="bulkBtn">Bulk upload</button>' +
         '<button class="btn btn-ghost btn-sm" id="importBtn">Paste extracted lines</button></div>' +
         "</div>" +
 
@@ -114,7 +114,7 @@
       } else {
         d.getElementById("dateHint").textContent = isIn
           ? "Any past date. Use the date the stock actually arrived."
-          : "You may back-date this entry.";
+          : "Any past date. Use the date the stock actually left.";
       }
 
       /* ---------- lines ---------- */
@@ -351,11 +351,12 @@
 
       /* ---------- actions ---------- */
 
-      if (isIn && d.getElementById("bulkBtn")) {
+      if (d.getElementById("bulkBtn")) {
         d.getElementById("bulkBtn").onclick = function () {
           if (!state.data) { UI.toast("Still loading", "Please wait for the page data to finish loading.", "warn"); return; }
           if (!w.BulkUpload) { UI.toast("Not available", "The bulk upload module is not loaded.", "bad"); return; }
           w.BulkUpload.open({
+            direction: type,
             user: user,
             branches: state.data.branches,
             products: state.data.products,

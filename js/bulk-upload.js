@@ -14,11 +14,16 @@
   "use strict";
 
   var COLUMNS = [
+    /* One set of columns serves both directions, so the outward template's
+       headings are listed as aliases of the inward ones. Without these the
+       outward file's Date and Category columns are never found: the dates
+       silently fall back to today and every category comes through blank. */
     { key: "date",       label: "Date of Inward Done", width: 18, required: false,
-      alias: ["Date", "Movement Date"], hint: "YYYY-MM-DD, the day the stock arrived. Blank uses today." },
-    { key: "movementCategory", label: "Inward Category", width: 20, required: false,
-      alias: ["Movement Category", "Category"],
-      hint: "Demo In, Sales Return In, Stock Transfer In or Opening Stock In." },
+      alias: ["Date", "Movement Date", "Date of Outward Done", "Date of Movement"],
+      hint: "YYYY-MM-DD, the day the stock moved. Blank uses today." },
+    { key: "movementCategory", label: "Inward Category", width: 20, required: true,
+      alias: ["Movement Category", "Category", "Outward Category"],
+      hint: "Mandatory. One of the categories for this direction." },
     { key: "branch",     label: "Branch Code",  width: 18, required: true,  alias: ["Branch", "Branch Name"], hint: "e.g. WB_Kolkata" },
     { key: "productCode",label: "Product Code", width: 14, required: false, alias: ["Code"], hint: "P001. Either code or name." },
     { key: "productName",label: "Product Name", width: 46, required: false, alias: ["Product", "Item Name", "Asset Name"], hint: "Matched if the code is blank." },
@@ -31,18 +36,27 @@
 
   w.BulkUpload = {
     /* opts: { user, branches, products, onDone } */
+    /* opts.direction is "IN" or "OUT". Everything the person reads and
+       every validation follows from it, so one module serves both
+       screens and the two can never drift apart. */
     open: function (opts) {
+      var DIR = (opts && opts.direction) === "OUT" ? "OUT" : "IN";
+      var isOut = DIR === "OUT";
+      var WORD = isOut ? "outward" : "inward";
+      var WORDC = isOut ? "Outward" : "Inward";
       var UI = w.UI;
       var user = opts.user;
       var state = { rows: [], parsed: null };
 
       var m = UI.modal({
-        title: "Bulk inward upload",
+        title: "Bulk " + WORD + " upload",
         okText: "",
         cancelText: "Close",
         body:
           '<div class="alert info"><div><b>What this does</b>' +
-          "Posts inward entries in bulk, so opening balances can be loaded without typing each line. " +
+          (isOut
+            ? "Posts outward entries in bulk, for a large issue or site despatch that would take too long to type line by line. "
+            : "Posts inward entries in bulk, so opening balances can be loaded without typing each line. ") +
           "Rows sharing a challan number are saved as one document, exactly as if you had entered them " +
           "on the inward screen.</div></div>" +
 
@@ -86,14 +100,14 @@
 
       function buildTemplate(prefill) {
         var prods = sortedProducts();
-        var catList = (w.APP_CONFIG.movementCategories || {}).IN || [];
+        var catList = (w.APP_CONFIG.movementCategories || {})[DIR] || [];
         var brs = sortedBranches();
         var nB = brs.length + 1, nP = prods.length + 1;
         var M = w.Master;
         var q = "'Dropdown Master Data'";
 
         /* --- sheet 1: the entry sheet --- */
-        var head = ["Date of Inward Done *", "Inward Category *", "Branch Code *", "Product Name *",
+        var head = ["Date of " + WORDC + " Done *", WORDC + " Category *", "Branch Code *", "Product Name *",
                     "Product Code", "Product Category", "Product Subcategory", "Quantity *",
                     "Challan No", "Invoice No", "Party Name", "Remarks", "Validation Check"];
         var widths = [18, 22, 20, 52, 14, 22, 22, 12, 20, 18, 30, 34, 44];
@@ -118,7 +132,7 @@
           var p0 = seed[i0];
           rows.push([
             { v: "", s: XS.DATE },
-            { v: p0 ? "Opening Stock In" : "", s: XS.INPUT },
+            { v: p0 ? (isOut ? (catList[0] || "") : "Opening Stock In") : "", s: XS.INPUT },
             { v: p0 ? (opts.user.role === "HO_ADMIN" ? "" : opts.user.branch) : "", s: XS.INPUT },
             { v: p0 ? p0.productName : "", s: XS.INPUT },
             { f: 'IF($D' + r + '="","",IFERROR(INDEX(ProductCodeList,MATCH($D' + r + ',ProductList,0)),"NOT FOUND"))', s: XS.LOCKED },
@@ -143,7 +157,8 @@
             { type: "list", range: "B" + FIRST + ":B" + LAST, formula1: "InwardCategoryList",
               errorTitle: "Category not recognised",
               error: "Pick an inward category from the list.",
-              promptTitle: "Inward Category", prompt: "Why the stock is coming in." },
+              promptTitle: WORDC + " Category",
+              prompt: isOut ? "Why the stock is leaving." : "Why the stock is coming in." },
             { type: "list", range: "C" + FIRST + ":C" + LAST, formula1: "BranchList",
               errorTitle: "Branch not recognised",
               error: "Pick a branch code from the list on the Dropdown Master Data sheet.",
@@ -164,7 +179,7 @@
         };
 
         /* --- sheet 2: the lookup lists --- */
-        var cats = (w.APP_CONFIG.movementCategories || {}).IN || [];
+        var cats = (w.APP_CONFIG.movementCategories || {})[DIR] || [];
         var mRows = [];
         var maxLen = Math.max(brs.length, prods.length, cats.length);
         for (var k = 0; k < maxLen; k++) {
@@ -191,7 +206,7 @@
             { label: "", width: 3 },
             { label: "Product Code", width: 14 }, { label: "Product Name", width: 52 },
             { label: "Master Category", width: 24 }, { label: "Subcategory", width: 24 },
-            { label: "", width: 3 }, { label: "Inward Category", width: 24 }
+            { label: "", width: 3 }, { label: WORDC + " Category", width: 24 }
           ],
           rows: mRows,
           protect: true, password: PW
@@ -218,8 +233,8 @@
         return 'IF(COUNTA($A' + r + ':$D' + r + ',$H' + r + ':$L' + r + ')=0,"",' +
           'IF($C' + r + '="","ERROR - Branch Code is blank",' +
           'IF(COUNTIF(BranchList,$C' + r + ')=0,"ERROR - Branch Code not in the master list",' +
-          'IF($B' + r + '="","ERROR - Inward Category is blank",' +
-          'IF(COUNTIF(InwardCategoryList,$B' + r + ')=0,"ERROR - Inward Category not in the list",' +
+          'IF($B' + r + '="","ERROR - ' + WORDC + ' Category is blank",' +
+          'IF(COUNTIF(InwardCategoryList,$B' + r + ')=0,"ERROR - ' + WORDC + ' Category not in the list",' +
           'IF($D' + r + '="","ERROR - Product Name is blank",' +
           'IF(COUNTIF(ProductList,$D' + r + ')=0,"ERROR - Product Name not in the master list",' +
           'IF($H' + r + '="","ERROR - Quantity is blank",' +
@@ -275,7 +290,10 @@
       function specSheet() {
         var SPEC = [
           ["Date of Inward Done", "Date DD-MM-YYYY", "N", "Yes", "The day the stock physically arrived. Today or earlier. Blank uses the upload date.", "20-08-2026"],
-          ["Inward Category", "List", "Y", "Dropdown", "Why the stock is coming in: " + ((w.APP_CONFIG.movementCategories || {}).IN || []).join(", ") + ".", "Opening Stock In"],
+          [WORDC + " Category", "List", "Y (mandatory)", "Dropdown",
+           "Mandatory. Why the stock is " + (isOut ? "leaving" : "coming in") +
+           ". A row without one is rejected: " + ((w.APP_CONFIG.movementCategories || {})[DIR] || []).join(", ") + ".",
+           isOut ? "Sales Out" : "Purchase In"],
           ["Branch Code", "List", "Y", "Dropdown", "Must exist in BranchList. Branch users may only use their own branch.", "WB_Kolkata"],
           ["Product Name", "List", "Y", "Dropdown", "Must exist in ProductList. Matched case-insensitively on upload.", "Battery 120AH Exide"],
           ["Product Code", "Text (10)", "\u2013", "Formula", "Derived from Product Name. Reads NOT FOUND if the name was typed over.", "P003"],
@@ -304,7 +322,7 @@
         if (kind === "csv") {
           UI.exportCSV("Prostarm-Bulk-Stock-Inward-Template",
             COLUMNS.map(function (c) { return c.label; }),
-            [[w.API.today(), "Opening Stock In",
+            [[w.API.today(), (isOut ? ((w.APP_CONFIG.movementCategories || {}).OUT || [])[0] : "Opening Stock In"),
               opts.user.role === "HO_ADMIN" ? "WB_Kolkata" : opts.user.branch,
               "P001", "Battery 100AH -Exide", 25, "OPENING/" + w.API.today().slice(0, 7), "",
               "Opening stock as on " + w.API.today(), "Physical count"]]);
@@ -430,11 +448,16 @@
             problems.push("quantity \u201c" + qtyRaw + "\u201d is not a whole number");
           } else if (qty > 999999) problems.push("quantity looks wrong");
 
+          /* Mandatory, both directions. Letting a blank through and
+             defaulting it mislabels real movements, and the
+             movement-category report cannot then be trusted. */
           var moveCat = get("movementCategory");
-          var allowed = (w.APP_CONFIG.movementCategories || {}).IN || [];
-          if (moveCat && allowed.length) {
+          var allowed = (w.APP_CONFIG.movementCategories || {})[DIR] || [];
+          if (!moveCat) {
+            problems.push("no " + WORD + " category \u2014 pick one of: " + allowed.join(", "));
+          } else if (allowed.length) {
             var hit = allowed.find(function (c) { return c.toLowerCase() === moveCat.toLowerCase(); });
-            if (!hit) problems.push('inward category "' + moveCat + '" is not one of: ' + allowed.join(", "));
+            if (!hit) problems.push(WORD + ' category "' + moveCat + '" is not one of: ' + allowed.join(", "));
             else moveCat = hit;
           }
 
@@ -482,7 +505,6 @@
         var totalQty = ok.reduce(function (a, r) { return a + r.qty; }, 0);
         var branches = {};
         ok.forEach(function (r) { branches[r.branch] = true; });
-        var noCat = ok.filter(function (r) { return !r.movementCategory; }).length;
 
         if (out) out.innerHTML =
           '<div class="grid g-4" style="margin:14px 0">' +
@@ -504,13 +526,6 @@
               }).join("") +
               (bad.length > 50 ? '<tr><td colspan="3" class="muted small">and ' + (bad.length - 50) + " more</td></tr>" : "") +
               "</tbody></table></div>"
-            : "") +
-
-          (noCat
-            ? '<div class="alert warn"><div><b>' + noCat + " row" + (noCat === 1 ? " has" : "s have") +
-              " no inward category</b>They will automatically default to " +
-              "<b>Opening Stock In</b>. If this is incorrect, please fill in the Inward Category column in your file." +
-              "</div></div>"
             : "") +
 
           (splitByDate
@@ -609,7 +624,7 @@
                 return w.API.createBatch({
                   date: first.date, challanNo: first.challanNo, invoiceNo: first.invoiceNo,
                   branch: first.branch, zone: branchRow ? branchRow.zone : "",
-                  txnType: "IN", movementCategory: first.movementCategory || "Opening Stock In",
+                  txnType: DIR, movementCategory: first.movementCategory,
                   partyName: first.partyName,
                   remarks: first.remarks || "Bulk upload"
                 }, g.map(function (r) {

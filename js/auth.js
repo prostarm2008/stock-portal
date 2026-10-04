@@ -69,11 +69,12 @@
     BRANCH_USER: {
       label: "Branch Logistic",
       pages: ["dashboard", "inward", "outward", "stock-summary", "inventory-summary", "reports", "audit-case"],
-      /* Inward may be dated back — stock physically arrived when it
-         arrived, and paperwork lags. Outward may not: a back-dated issue
-         rewrites a balance that reports and audits have already been run
-         against. HO Admin and Stock Auditor can, for corrections. */
-      canWrite: true, canBackdateOutward: false, canManageUsers: false, canSeeAllBranches: false, canSeeAudit: false
+      /* Both directions may be dated back. Branches issue stock and raise
+         the paperwork afterwards, so forcing today's date would misstate
+         when the stock actually left. The entry date is captured
+         separately and cannot be edited, so a back-dated document is
+         always visible as one on the audit trail. */
+      canWrite: true, canBackdateOutward: true, canManageUsers: false, canSeeAllBranches: false, canSeeAudit: false
     },
     REGIONAL_MANAGER: {
       label: "Regional Manager",
