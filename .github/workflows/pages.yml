@@ -48,6 +48,10 @@ jobs:
                    ("deleteProduct","FLOW_DELETEPRODUCT"),("saveUser","FLOW_SAVEUSER"),
                    ("createTxn","FLOW_CREATETXN"),("saveRecords","FLOW_SAVERECORDS")]
           seen = {}
+          m = re.search(r'flows\s*:\s*\{.*?\n\s*\}', s, re.S)
+          if not m:
+              sys.exit("Could not find the flows block in js/config.js")
+          block = m.group(0)
           for key, env in pairs:
               val = os.environ.get(env, "").strip()
               if not val.startswith("https://"):
@@ -59,9 +63,10 @@ jobs:
               if val in seen:
                   sys.exit("Secrets " + seen[val] + " and " + env + " hold the same URL. Each flow has its own.")
               seen[val] = env
-              s, n = re.subn(r'(\b' + key + r':\s*)""', lambda m: m.group(1) + '"' + val + '"', s, count=1)
+              block, n = re.subn(r'(\b' + key + r'\s*:\s*)"[^"]*"', lambda mm: mm.group(1) + '"' + val + '"', block, count=1)
               if n != 1:
-                  sys.exit("Could not place " + key + " in config.js")
+                  sys.exit("Could not find the '" + key + "' entry inside flows { } in js/config.js")
+          s = s[:m.start()] + block + s[m.end():]
           open(path, "w", encoding="utf-8").write(s)
           PY
       - uses: actions/upload-pages-artifact@v5
