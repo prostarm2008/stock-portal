@@ -1,1 +1,71 @@
-
+# Publishes the portal to GitHub Pages on every push to main.
+# One-time setup: repository Settings > Pages > Build and deployment > Source: "GitHub Actions".
+# Nothing private is stored in the repository: the flow URLs come from repository secrets.
+name: Deploy portal to GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Refuse to deploy with credentials or hashes in the site
+        run: |
+          if grep -rqE "passwordHash\"\s*:\s*\"[0-9a-f]{64}" data js *.html; then echo "password hashes found in the repo"; exit 1; fi
+      - uses: actions/configure-pages@v6
+      - name: Keep only the site files
+        run: |
+          mkdir _site
+          cp -r *.html assets css data js _site/
+          touch _site/.nojekyll
+      - name: Write flow URLs from repository secrets
+        env:
+          FLOW_LOGIN: ${{ secrets.FLOW_LOGIN }}
+          FLOW_READ: ${{ secrets.FLOW_READ }}
+          FLOW_SAVEPRODUCT: ${{ secrets.FLOW_SAVEPRODUCT }}
+          FLOW_DELETEPRODUCT: ${{ secrets.FLOW_DELETEPRODUCT }}
+          FLOW_SAVEUSER: ${{ secrets.FLOW_SAVEUSER }}
+          FLOW_CREATETXN: ${{ secrets.FLOW_CREATETXN }}
+          FLOW_SAVERECORDS: ${{ secrets.FLOW_SAVERECORDS }}
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          path = "_site/js/config.js"
+          s = open(path, encoding="utf-8").read()
+          pairs = [("login","FLOW_LOGIN"),("read","FLOW_READ"),("saveProduct","FLOW_SAVEPRODUCT"),
+                   ("deleteProduct","FLOW_DELETEPRODUCT"),("saveUser","FLOW_SAVEUSER"),
+                   ("createTxn","FLOW_CREATETXN"),("saveRecords","FLOW_SAVERECORDS")]
+          seen = {}
+          for key, env in pairs:
+              val = os.environ.get(env, "").strip()
+              if not val.startswith("https://"):
+                  sys.exit("Secret " + env + " is missing or is not an https URL")
+              if "/triggers/manual/paths/invoke" not in val or "sig=" not in val:
+                  sys.exit("Secret " + env + " is not a flow's HTTP POST URL. Copy it from the first step, "
+                           "'When an HTTP request is received', of that flow. It must contain "
+                           "/triggers/manual/paths/invoke and sig=")
+              if val in seen:
+                  sys.exit("Secrets " + seen[val] + " and " + env + " hold the same URL. Each flow has its own.")
+              seen[val] = env
+              s, n = re.subn(r'(\b' + key + r':\s*)""', lambda m: m.group(1) + '"' + val + '"', s, count=1)
+              if n != 1:
+                  sys.exit("Could not place " + key + " in config.js")
+          open(path, "w", encoding="utf-8").write(s)
+          PY
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5
