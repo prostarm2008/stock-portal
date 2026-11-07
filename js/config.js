@@ -27,13 +27,13 @@ window.APP_CONFIG = {
      a request that lacks a valid session token. They are still best kept out
      of public view. */
   flows: {
-    login:         "FLOW_LOGIN",   /* PSP - Login */
-    read:          "FLOW_READ",   /* PSP - Read */
-    saveProduct:   "FLOW_SAVEPRODUCT",   /* PSP - Save Product */
-    deleteProduct: "FLOW_DELETEPRODUCT",   /* PSP - Delete Product */
-    saveUser:      "FLOW_SAVEUSER",   /* PSP - Save User */
-    createTxn:     "FLOW_CREATETXN",   /* PSP - Create Transaction */
-    saveRecords:   "FLOW_SAVERECORDS"    /* PSP - Save Records */
+    login:         "",   /* PSP - Login */
+    read:          "",   /* PSP - Read */
+    saveProduct:   "",   /* PSP - Save Product */
+    deleteProduct: "",   /* PSP - Delete Product */
+    saveUser:      "",   /* PSP - Save User */
+    createTxn:     "",   /* PSP - Create Transaction */
+    saveRecords:   ""    /* PSP - Save Records */
   },
 
   /* Why the stock moved. Separate lists per direction, because a
